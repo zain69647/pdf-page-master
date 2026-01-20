@@ -117,6 +117,7 @@ export function usePDFEditor() {
             thumbnail: dataUrl,
             width,
             height,
+            sourceType: 'pdf',
           });
           
           processedPages++;
@@ -138,6 +139,98 @@ export function usePDFEditor() {
       setLoadingProgress(0);
     }
   }, [sources.length, renderThumbnail, saveToHistory]);
+
+  // Create thumbnail from image
+  const createImageThumbnail = useCallback(async (
+    dataUrl: string,
+    maxSize: number = 200
+  ): Promise<{ thumbnail: string; width: number; height: number }> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve({
+          thumbnail: canvas.toDataURL('image/jpeg', 0.7),
+          width: img.width,
+          height: img.height,
+        });
+      };
+      img.src = dataUrl;
+    });
+  }, []);
+
+  // Load image files
+  const loadImages = useCallback(async (files: File[]) => {
+    setIsLoading(true);
+    setError(null);
+    setLoadingProgress(0);
+
+    try {
+      const imageFiles = files.filter(f => f.type.startsWith('image/'));
+      if (imageFiles.length === 0) {
+        throw new Error('Please select valid image files');
+      }
+
+      const newPages: PDFPage[] = [];
+      let processedImages = 0;
+
+      for (const file of imageFiles) {
+        const imageData = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        const { thumbnail, width, height } = await createImageThumbnail(imageData);
+
+        newPages.push({
+          id: generateId(),
+          pageIndex: 0,
+          sourceFileIndex: -1,
+          thumbnail,
+          width,
+          height,
+          sourceType: 'image',
+          imageData,
+        });
+
+        processedImages++;
+        setLoadingProgress(Math.round((processedImages / imageFiles.length) * 100));
+      }
+
+      setPages(prev => {
+        const updated = [...prev, ...newPages];
+        saveToHistory(updated);
+        return updated;
+      });
+      setSelectedIds(new Set());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load images');
+    } finally {
+      setIsLoading(false);
+      setLoadingProgress(0);
+    }
+  }, [createImageThumbnail, saveToHistory]);
+
+  // Add new pages (accepts both PDFs and images)
+  const addNewPages = useCallback(async (files: File[]) => {
+    const pdfFiles = files.filter(f => f.type === 'application/pdf');
+    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+
+    if (pdfFiles.length === 0 && imageFiles.length === 0) {
+      setError('Please select PDF or image files');
+      return;
+    }
+
+    if (pdfFiles.length > 0) await loadPDFs(pdfFiles);
+    if (imageFiles.length > 0) await loadImages(imageFiles);
+  }, [loadPDFs, loadImages]);
 
   // Reorder pages
   const reorderPages = useCallback((activeId: string, overId: string) => {
@@ -256,21 +349,42 @@ export function usePDFEditor() {
       const outputDoc = await PDFDocument.create();
 
       for (const page of pages) {
-        const source = sources[page.sourceFileIndex];
-        if (!source) continue;
+        if (page.sourceType === 'image' && page.imageData) {
+          // Embed image as PDF page
+          let image;
+          if (page.imageData.includes('image/png')) {
+            image = await outputDoc.embedPng(page.imageData);
+          } else {
+            image = await outputDoc.embedJpg(page.imageData);
+          }
 
-        const srcDoc = await PDFDocument.load(source.arrayBuffer);
-        const [copiedPage] = await outputDoc.copyPages(srcDoc, [page.pageIndex]);
+          const imgDims = image.scale(1);
+          const pdfPage = outputDoc.addPage([imgDims.width, imgDims.height]);
+          
+          pdfPage.drawImage(image, {
+            x: 0,
+            y: 0,
+            width: imgDims.width,
+            height: imgDims.height,
+          });
+        } else {
+          // Copy PDF page
+          const source = sources[page.sourceFileIndex];
+          if (!source) continue;
 
-        if (page.cropBox) {
-          const { x, y, width, height } = page.cropBox;
-          // PDF coordinates are from bottom-left
-          const pdfHeight = copiedPage.getHeight();
-          copiedPage.setCropBox(x, pdfHeight - y - height, width, height);
-          copiedPage.setMediaBox(x, pdfHeight - y - height, width, height);
+          const srcDoc = await PDFDocument.load(source.arrayBuffer);
+          const [copiedPage] = await outputDoc.copyPages(srcDoc, [page.pageIndex]);
+
+          if (page.cropBox) {
+            const { x, y, width, height } = page.cropBox;
+            // PDF coordinates are from bottom-left
+            const pdfHeight = copiedPage.getHeight();
+            copiedPage.setCropBox(x, pdfHeight - y - height, width, height);
+            copiedPage.setMediaBox(x, pdfHeight - y - height, width, height);
+          }
+
+          outputDoc.addPage(copiedPage);
         }
-
-        outputDoc.addPage(copiedPage);
       }
 
       const pdfBytes = await outputDoc.save();
@@ -307,6 +421,8 @@ export function usePDFEditor() {
     error,
     canUndo,
     loadPDFs,
+    loadImages,
+    addNewPages,
     reorderPages,
     deleteSelected,
     duplicateSelected,

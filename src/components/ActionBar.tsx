@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { 
   Trash2, 
   Copy, 
@@ -6,6 +7,7 @@ import {
   GripVertical,
   CheckSquare,
   XSquare,
+  ImagePlus,
 } from 'lucide-react';
 
 interface ActionBarProps {
@@ -21,6 +23,7 @@ interface ActionBarProps {
   onToggleDragMode: () => void;
   onSelectAll: () => void;
   onClearSelection: () => void;
+  onAddPages?: (files: File[]) => void;
 }
 
 export function ActionBar({
@@ -36,9 +39,28 @@ export function ActionBar({
   onToggleDragMode,
   onSelectAll,
   onClearSelection,
+  onAddPages,
 }: ActionBarProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAddClick = () => fileInputRef.current?.click();
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0 && onAddPages) onAddPages(files);
+    e.target.value = '';
+  };
+
   return (
     <div className="action-bar animate-slide-up">
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="application/pdf,image/jpeg,image/png,image/gif,image/webp"
+        onChange={handleFileChange}
+        className="hidden"
+      />
       <div className="flex items-center justify-between px-4 py-3 gap-2">
         {/* Left side - selection info / actions */}
         <div className="flex items-center gap-1">
@@ -74,6 +96,14 @@ export function ActionBar({
 
         {/* Center actions */}
         <div className="flex items-center gap-1">
+          <button
+            onClick={handleAddClick}
+            className="touch-btn-icon"
+            title="Add pages (PDF or images)"
+          >
+            <ImagePlus className="w-5 h-5 text-primary" />
+          </button>
+
           <button
             onClick={onToggleDragMode}
             className={`touch-btn-icon ${isDragMode ? 'bg-primary text-primary-foreground' : ''}`}
