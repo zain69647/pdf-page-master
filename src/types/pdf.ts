@@ -6,6 +6,9 @@ export interface PDFPage {
   width: number;
   height: number;
   cropBox?: CropBox;
+  // Image source support
+  sourceType: 'pdf' | 'image';
+  imageData?: string; // Base64 image data for image-based pages
 }
 
 export interface CropBox {

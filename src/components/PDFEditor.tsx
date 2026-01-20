@@ -18,6 +18,7 @@ export function PDFEditor() {
     error,
     canUndo,
     loadPDFs,
+    addNewPages,
     reorderPages,
     deleteSelected,
     duplicateSelected,
@@ -161,6 +162,7 @@ export function PDFEditor() {
           onToggleDragMode={toggleDragMode}
           onSelectAll={selectAll}
           onClearSelection={clearSelection}
+          onAddPages={addNewPages}
         />
       )}
 
