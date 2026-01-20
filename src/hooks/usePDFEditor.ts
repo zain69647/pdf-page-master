@@ -1,14 +1,20 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { PDFDocument } from 'pdf-lib';
-import * as pdfjsLib from 'pdfjs-dist';
 import type { PDFPage, PDFSource, CropBox, HistoryState } from '@/types/pdf';
-
-// Configure PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
 
 const generateId = () => Math.random().toString(36).substring(2, 11);
 
 const MAX_HISTORY = 20;
+
+// Lazy load pdfjs-dist to avoid React hook issues
+let pdfjsLib: typeof import('pdfjs-dist') | null = null;
+const getPdfjs = async () => {
+  if (!pdfjsLib) {
+    pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
+  }
+  return pdfjsLib;
+};
 
 export function usePDFEditor() {
   const [pages, setPages] = useState<PDFPage[]>([]);
@@ -46,7 +52,8 @@ export function usePDFEditor() {
     pageNum: number,
     scale: number = 0.3
   ): Promise<{ dataUrl: string; width: number; height: number }> => {
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer.slice(0) }).promise;
+    const pdfjs = await getPdfjs();
+    const pdf = await pdfjs.getDocument({ data: arrayBuffer.slice(0) }).promise;
     const page = await pdf.getPage(pageNum);
     const viewport = page.getViewport({ scale });
     
